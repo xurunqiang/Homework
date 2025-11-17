@@ -68,6 +68,16 @@ pip install vosk
 pip install openai-whisper
 ```
 
+##### Vosk模型下载与放置
+
+1. 访问 https://alphacephei.com/vosk/models 下载所需语言的模型，例如 `vosk-model-small-cn-0.22`（中文）或 `vosk-model-small-en-us-0.15`（英文）。
+2. 解压模型，并将内部包含 `am/`, `conf/`, `graph/` 等文件夹的目录重命名为 `vosk-model`（或保留原名，但需保证该目录路径为 `app/models/vosk-model`）。
+3. 将整个目录复制到 `app/models/` 下，使最终结构类似：
+   - `app/models/vosk-model/am/`
+   - `app/models/vosk-model/conf/`
+   - `app/models/vosk-model/graph/`
+4. 重新启动服务后，`run_asr` 会优先尝试 Whisper，若未安装会自动加载 Vosk 模型，无需额外配置。
+
 ### API接口
 
 - `POST /upload` - 上传文件
