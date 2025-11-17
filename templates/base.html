@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}云盘系统{% endblock %}</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.ico">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            transition: all 0.2s ease;
+        }
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);
+            background-attachment: fixed;
+            min-height: 100vh;
+            color: #1e293b;
+        }
+        .card {
+            background: rgba(255, 255, 255, 0.98);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        .upload-area {
+            border: 2px dashed #3b82f6;
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(147, 197, 253, 0.05) 100%);
+            transition: all 0.3s;
+        }
+        .upload-area:hover {
+            border-color: #2563eb;
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(147, 197, 253, 0.1) 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+        }
+        .upload-area.dragover {
+            border-color: #1d4ed8;
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(147, 197, 253, 0.15) 100%);
+            transform: scale(1.02);
+        }
+        nav {
+            background: rgba(255, 255, 255, 0.95) !important;
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(59, 130, 246, 0.2);
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+            transform: translateY(-2px);
+        }
+        .feature-card {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(248, 250, 252, 0.9) 100%);
+            border: 1px solid rgba(59, 130, 246, 0.1);
+        }
+        .feature-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15);
+            border-color: rgba(59, 130, 246, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <nav class="mb-6">
+        <div class="container mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <h1 class="text-3xl font-bold bg-gradient-to-r from-blue-600 to-cyan-500 bg-clip-text text-transparent">
+                    <i class="fas fa-cloud-download-alt mr-2 text-blue-500"></i>智能云盘系统
+                </h1>
+                <div class="flex gap-6 items-center">
+                    <a href="/" class="text-gray-700 hover:text-blue-600 font-medium px-3 py-2 rounded-lg hover:bg-blue-50 transition">
+                        <i class="fas fa-home mr-1"></i>首页
+                    </a>
+                    <a href="/files" class="text-gray-700 hover:text-blue-600 font-medium px-3 py-2 rounded-lg hover:bg-blue-50 transition">
+                        <i class="fas fa-folder-open mr-1"></i>我的文件
+                    </a>
+                    <div id="auth-area" class="flex items-center gap-2"></div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mx-auto px-4 py-6">
+        {% block content %}{% endblock %}
+    </div>
+
+    <footer class="mt-12 text-center text-gray-300 py-6">
+        <p class="text-sm">&copy; 2024 智能云盘系统 - 您的智能存储与处理平台</p>
+        <p class="text-xs text-gray-400 mt-2">支持图片、视频上传 • 智能识别 • 内容审核 • 全文检索</p>
+    </footer>
+
+    <script>
+        // 全局消息提示
+        function showMessage(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg text-white ${
+                type === 'success' ? 'bg-green-500' : 'bg-red-500'
+            }`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        // ========== 登录/注册（前端提示） ==========
+        function getToken() {
+            try { return localStorage.getItem('auth_token'); } catch(e) { return null; }
+        }
+        function setToken(token) {
+            try { localStorage.setItem('auth_token', token); } catch(e) {}
+        }
+        function clearToken() {
+            try { localStorage.removeItem('auth_token'); } catch(e) {}
+        }
+        async function fetchMe() {
+            const token = getToken();
+            if (!token) return null;
+            try {
+                const res = await fetch('/auth/me', { headers: { 'Authorization': 'Bearer ' + token } });
+                if (!res.ok) return null;
+                return await res.json();
+            } catch(e) { return null; }
+        }
+        function renderAuthArea(user) {
+            const container = document.getElementById('auth-area');
+            if (!container) return;
+            if (user) {
+                container.innerHTML = `
+                    <span class="text-gray-700 mr-1"><i class="fas fa-user mr-1"></i>${user.username}</span>
+                    <button id="logout-btn" class="text-gray-700 hover:text-blue-600 font-medium px-3 py-2 rounded-lg hover:bg-blue-50 transition">退出</button>
+                `;
+                const btn = document.getElementById('logout-btn');
+                if (btn) btn.addEventListener('click', () => {
+                    clearToken();
+                    showMessage('已退出登录', 'success');
+                    checkAuth(true);
+                });
+            } else {
+                container.innerHTML = `
+                    <button id="login-open" class="text-gray-700 hover:text-blue-600 font-medium px-3 py-2 rounded-lg hover:bg-blue-50 transition">登录</button>
+                    <button id="register-open" class="text-white bg-gradient-to-r from-blue-500 to-blue-600 font-medium px-3 py-2 rounded-lg hover:from-blue-600 hover:to-blue-700 transition">注册</button>
+                `;
+                const openLogin = document.getElementById('login-open');
+                const openReg = document.getElementById('register-open');
+                if (openLogin) openLogin.addEventListener('click', () => openAuthModal('login'));
+                if (openReg) openReg.addEventListener('click', () => openAuthModal('register'));
+            }
+        }
+        function openAuthModal(tab = 'login') {
+            let modal = document.getElementById('auth-modal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'auth-modal';
+                modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+                modal.innerHTML = `
+                    <div class="bg-white rounded-2xl p-6 w-full max-w-md relative">
+                        <button id="auth-close" class="absolute top-3 right-3 text-gray-500 hover:text-gray-700">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                        <div class="mb-4 flex border-b">
+                            <button id="tab-login" class="flex-1 py-2 text-center font-semibold">登录</button>
+                            <button id="tab-register" class="flex-1 py-2 text-center font-semibold">注册</button>
+                        </div>
+                        <div id="panel-login" class="space-y-3">
+                            <input id="login-username" type="text" placeholder="用户名" class="w-full px-4 py-3 border-2 border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <input id="login-password" type="password" placeholder="密码" class="w-full px-4 py-3 border-2 border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <button id="login-submit" class="w-full btn-primary text-white px-4 py-3 rounded-xl font-medium">登录</button>
+                        </div>
+                        <div id="panel-register" class="space-y-3 hidden">
+                            <input id="reg-username" type="text" placeholder="用户名（至少3个字符）" class="w-full px-4 py-3 border-2 border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <input id="reg-password" type="password" placeholder="密码（至少6个字符）" class="w-full px-4 py-3 border-2 border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <button id="register-submit" class="w-full btn-primary text-white px-4 py-3 rounded-xl font-medium">注册并登录</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+                modal.addEventListener('click', (e) => { if (e.target === modal) closeAuthModal(); });
+                const closeBtn = modal.querySelector('#auth-close');
+                if (closeBtn) closeBtn.addEventListener('click', closeAuthModal);
+                const tabLogin = modal.querySelector('#tab-login');
+                const tabReg = modal.querySelector('#tab-register');
+                tabLogin.addEventListener('click', () => switchAuthTab('login'));
+                tabReg.addEventListener('click', () => switchAuthTab('register'));
+                const loginSubmit = modal.querySelector('#login-submit');
+                const registerSubmit = modal.querySelector('#register-submit');
+                loginSubmit.addEventListener('click', submitLogin);
+                registerSubmit.addEventListener('click', submitRegister);
+            }
+            switchAuthTab(tab);
+            modal.style.display = 'flex';
+        }
+        function closeAuthModal() {
+            const modal = document.getElementById('auth-modal');
+            if (modal) modal.style.display = 'none';
+        }
+        function switchAuthTab(tab) {
+            const panelLogin = document.getElementById('panel-login');
+            const panelReg = document.getElementById('panel-register');
+            if (!panelLogin || !panelReg) return;
+            if (tab === 'login') {
+                panelLogin.classList.remove('hidden');
+                panelReg.classList.add('hidden');
+            } else {
+                panelLogin.classList.add('hidden');
+                panelReg.classList.remove('hidden');
+            }
+        }
+        async function submitLogin() {
+            const username = (document.getElementById('login-username') || {}).value || '';
+            const password = (document.getElementById('login-password') || {}).value || '';
+            if (!username || !password) { showMessage('请输入用户名和密码', 'error'); return; }
+            try {
+                const res = await fetch('/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({ detail: '登录失败' }));
+                    throw new Error(err.detail || '登录失败');
+                }
+                const data = await res.json();
+                setToken(data.token);
+                showMessage('登录成功', 'success');
+                closeAuthModal();
+                checkAuth(true);
+            } catch (e) {
+                showMessage(e.message || '登录失败', 'error');
+            }
+        }
+        async function submitRegister() {
+            const username = (document.getElementById('reg-username') || {}).value || '';
+            const password = (document.getElementById('reg-password') || {}).value || '';
+            if (!username || username.length < 3) { showMessage('用户名至少3个字符', 'error'); return; }
+            if (!password || password.length < 6) { showMessage('密码至少6个字符', 'error'); return; }
+            try {
+                const res = await fetch('/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({ detail: '注册失败' }));
+                    throw new Error(err.detail || '注册失败');
+                }
+                const data = await res.json();
+                setToken(data.token);
+                showMessage('注册成功，已自动登录', 'success');
+                closeAuthModal();
+                checkAuth(true);
+            } catch (e) {
+                showMessage(e.message || '注册失败', 'error');
+            }
+        }
+        async function checkAuth(autoPrompt = false) {
+            const user = await fetchMe();
+            renderAuthArea(user);
+            if (!user && autoPrompt) {
+                openAuthModal('login');
+            }
+        }
+        document.addEventListener('DOMContentLoaded', () => {
+            const hasToken = !!getToken();
+            checkAuth(!hasToken);
+        });
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>
+

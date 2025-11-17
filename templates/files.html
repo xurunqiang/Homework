@@ -1,0 +1,1004 @@
+{% extends "base.html" %}
+
+{% block title %}我的文件 - 云盘系统{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <div class="card rounded-2xl p-6 mb-6">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-4">
+            <h2 class="text-3xl font-bold text-gray-800 flex items-center">
+                <i class="fas fa-folder-open mr-3 text-blue-600"></i>我的文件
+            </h2>
+            <div class="flex gap-3 flex-wrap">
+                <input type="text" id="filterInput" placeholder="搜索文件名..." 
+                       class="px-4 py-2 border-2 border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                <select id="kindFilter" class="px-4 py-2 border-2 border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white">
+                    <option value="">全部类型</option>
+                    <option value="image">图片</option>
+                    <option value="video">视频</option>
+                    <option value="other">其他</option>
+                </select>
+                <select id="categoryFilter" class="px-4 py-2 border-2 border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white">
+                    <option value="">全部分类</option>
+                    <option value="动物">动物</option>
+                    <option value="植物">植物</option>
+                    <option value="风景">风景</option>
+                    <option value="建筑">建筑</option>
+                    <option value="生活">生活</option>
+                    <option value="其他">其他</option>
+                </select>
+            </div>
+        </div>
+
+        <div id="filesList" class="space-y-4">
+            <div class="text-center py-12 text-gray-500">
+                <i class="fas fa-spinner fa-spin text-3xl mb-3"></i>
+                <p>正在加载文件列表...</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function loadFiles() {
+        try {
+            const response = await fetch('/api/files');
+            const files = await response.json();
+            displayFiles(files);
+        } catch (error) {
+            document.getElementById('filesList').innerHTML = 
+                '<div class="text-center py-12 text-red-500"><i class="fas fa-exclamation-circle text-3xl mb-3"></i><p>加载失败，请刷新页面重试</p></div>';
+        }
+    }
+
+    // HTML转义函数（必须在displayFiles之前定义）
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function displayFiles(files) {
+        const container = document.getElementById('filesList');
+        const filter = document.getElementById('filterInput').value.toLowerCase();
+        const kindFilter = document.getElementById('kindFilter').value;
+        const categoryFilter = document.getElementById('categoryFilter').value;
+        
+        let filtered = files.filter(f => {
+            const matchFilter = !filter || f.filename.toLowerCase().includes(filter);
+            const matchKind = !kindFilter || f.kind === kindFilter;
+            
+            // 分类筛选：检查文件的labels是否包含选中的分类
+            let matchCategory = true;
+            if (categoryFilter && f.labels) {
+                const labels = f.labels.split(',');
+                matchCategory = labels.some(label => label.trim() === categoryFilter);
+            } else if (categoryFilter && !f.labels) {
+                matchCategory = false; // 如果选择了分类但文件没有标签，则不显示
+            }
+            
+            return matchFilter && matchKind && matchCategory;
+        });
+
+        if (filtered.length === 0) {
+            container.innerHTML = '<div class="text-center py-12 text-gray-500"><i class="fas fa-inbox text-4xl mb-3"></i><p>暂无文件</p><p class="text-sm mt-2">上传文件后即可在此查看</p></div>';
+            return;
+        }
+
+        const kindMap = { 'image': '图片', 'video': '视频', 'other': '其他文件' };
+        
+        container.innerHTML = filtered.map(file => {
+            const kindText = kindMap[file.kind] || '文件';
+            const icon = file.kind === 'image' ? 'fa-image text-blue-500' : 
+                       file.kind === 'video' ? 'fa-video text-red-500' : 
+                       'fa-file text-gray-500';
+            const size = formatSize(file.size_bytes);
+            const date = new Date(file.created_at).toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            
+            // 处理OCR文本和转录文本
+            const ocrText = file.ocr_text || '';
+            const ocrShort = ocrText.length > 500 ? escapeHtml(ocrText.substring(0, 500)) + '...' : escapeHtml(ocrText);
+            const ocrFull = escapeHtml(ocrText);
+            const showOcrToggle = ocrText.length > 500;
+            
+            const transcriptText = file.transcript_text || '';
+            const transcriptShort = transcriptText.length > 500 ? escapeHtml(transcriptText.substring(0, 500)) + '...' : escapeHtml(transcriptText);
+            const transcriptFull = escapeHtml(transcriptText);
+            const showTranscriptToggle = transcriptText.length > 500;
+            
+            return `
+                <div class="bg-white border-2 border-blue-100 rounded-xl p-5 hover:shadow-xl hover:border-blue-300 transition">
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                        <div class="flex items-center gap-4 flex-1">
+                            <div class="bg-blue-50 rounded-xl p-4">
+                                <i class="fas ${icon} text-4xl"></i>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <span class="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-semibold rounded-lg">${kindText}</span>
+                                    <h3 class="font-bold text-gray-800 truncate">${file.filename}</h3>
+                                </div>
+                                <div class="flex flex-wrap gap-3 text-sm text-gray-600">
+                                    <span><i class="fas fa-hdd mr-1"></i>${size}</span>
+                                    <span><i class="fas fa-calendar-alt mr-1"></i>${date}</span>
+                                    ${file.labels ? `<span class="text-blue-600"><i class="fas fa-tags mr-1"></i>${file.labels.split(',').slice(0, 3).join('、')}</span>` : ''}
+                                </div>
+                                ${file.moderation_flags ? 
+                                    `<p class="text-xs text-red-600 mt-2 flex items-center"><i class="fas fa-exclamation-triangle mr-1"></i><strong>审核标记:</strong> ${file.moderation_flags}</p>` : 
+                                    ''}
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            ${file.kind === 'image' ? `
+                                <button onclick="viewImage('${file.id}', '${file.filename.replace(/'/g, "\\'")}')" 
+                                        class="px-4 py-2 bg-gradient-to-r from-cyan-500 to-cyan-600 text-white rounded-xl hover:from-cyan-600 hover:to-cyan-700 transition shadow-md font-medium">
+                                    <i class="fas fa-eye mr-1"></i>查看
+                                </button>
+                            ` : ''}
+                            ${file.kind === 'video' ? `
+                                <button onclick="playVideo('${file.id}', '${file.filename.replace(/'/g, "\\'")}')" 
+                                        class="px-4 py-2 bg-gradient-to-r from-cyan-500 to-cyan-600 text-white rounded-xl hover:from-cyan-600 hover:to-cyan-700 transition shadow-md font-medium">
+                                    <i class="fas fa-play mr-1"></i>播放
+                                </button>
+                                <button onclick="showTranscodeModal('${file.id}', '${file.filename.replace(/'/g, "\\'")}')" 
+                                        class="px-4 py-2 bg-gradient-to-r from-indigo-500 to-indigo-600 text-white rounded-xl hover:from-indigo-600 hover:to-indigo-700 transition shadow-md font-medium">
+                                    <i class="fas fa-cog mr-1"></i>转码
+                                </button>
+                            ` : ''}
+                            <a href="/download/${file.id}" 
+                               class="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 transition shadow-md font-medium">
+                                <i class="fas fa-download mr-1"></i>下载
+                            </a>
+                            <button onclick="shareFile('${file.id}')" 
+                                    class="px-4 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-xl hover:from-emerald-600 hover:to-emerald-700 transition shadow-md font-medium">
+                                <i class="fas fa-share-alt mr-1"></i>分享
+                            </button>
+                            ${file.kind === 'image' ? `
+                                <button onclick="runOCR('${file.id}', '${file.filename.replace(/'/g, "\\'")}')" 
+                                        class="px-4 py-2 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-xl hover:from-purple-600 hover:to-purple-700 transition shadow-md font-medium">
+                                    <i class="fas fa-text-width mr-1"></i>文字识别
+                                </button>
+                            ` : ''}
+                            ${file.kind === 'video' ? `
+                                <button onclick="runASR('${file.id}', '${file.filename.replace(/'/g, "\\'")}')" 
+                                        class="px-4 py-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-xl hover:from-orange-600 hover:to-orange-700 transition shadow-md font-medium">
+                                    <i class="fas fa-microphone mr-1"></i>语音识别
+                                </button>
+                            ` : ''}
+                            <button data-file-id="${file.id}" data-file-name="${file.filename.replace(/"/g, '&quot;')}" 
+                                    onclick="deleteFileHandler(this)" 
+                                    class="px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-xl hover:from-red-600 hover:to-red-700 transition shadow-md font-medium">
+                                <i class="fas fa-trash-alt mr-1"></i>删除
+                            </button>
+                        </div>
+                    </div>
+                    ${ocrText ? `
+                        <div id="ocr-container-${file.id}" class="mt-4 p-4 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl border border-blue-200">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="flex items-center gap-2">
+                                    <p class="text-sm font-semibold text-blue-700"><i class="fas fa-text-width mr-2"></i>识别的文字内容:</p>
+                                    <button onclick="toggleOCRVisibility('${file.id}')" 
+                                            class="text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded hover:bg-blue-100 transition"
+                                            title="隐藏/显示文字内容">
+                                        <i class="fas fa-eye-slash" id="ocr-visibility-icon-${file.id}"></i>
+                                        <span id="ocr-visibility-text-${file.id}" class="ml-1">显示</span>
+                                    </button>
+                                </div>
+                                ${showOcrToggle ? `<button onclick="toggleOCRText('${file.id}')" class="text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded hover:bg-blue-100 transition">
+                                    <span id="ocr-toggle-${file.id}">展开</span>
+                                </button>` : ''}
+                            </div>
+                            <div id="ocr-content-${file.id}" class="relative hidden">
+                                <p id="ocr-text-${file.id}" class="text-sm text-gray-700 mt-2 leading-relaxed whitespace-pre-wrap break-words">${ocrShort}</p>
+                                ${showOcrToggle ? `<div id="ocr-full-${file.id}" class="hidden">
+                                    <p class="text-sm text-gray-700 mt-2 leading-relaxed whitespace-pre-wrap break-words">${ocrFull}</p>
+                                </div>` : ''}
+                            </div>
+                        </div>
+                    ` : ''}
+                    ${transcriptText ? `
+                        <div id="transcript-container-${file.id}" class="mt-4 p-4 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border border-emerald-200">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="flex items-center gap-2">
+                                    <p class="text-sm font-semibold text-emerald-700"><i class="fas fa-microphone mr-2"></i>语音转录内容:</p>
+                                    <button onclick="toggleTranscriptVisibility('${file.id}')" 
+                                            class="text-xs text-emerald-600 hover:text-emerald-800 font-medium px-2 py-1 rounded hover:bg-emerald-100 transition"
+                                            title="隐藏/显示转录内容">
+                                        <i class="fas fa-eye-slash" id="transcript-visibility-icon-${file.id}"></i>
+                                        <span id="transcript-visibility-text-${file.id}" class="ml-1">显示</span>
+                                    </button>
+                                </div>
+                                ${showTranscriptToggle ? `<button onclick="toggleTranscriptText('${file.id}')" class="text-xs text-emerald-600 hover:text-emerald-800 font-medium px-2 py-1 rounded hover:bg-emerald-100 transition">
+                                    <span id="transcript-toggle-${file.id}">展开</span>
+                                </button>` : ''}
+                            </div>
+                            <div id="transcript-content-${file.id}" class="relative hidden">
+                                <p id="transcript-text-${file.id}" class="text-sm text-gray-700 mt-2 leading-relaxed whitespace-pre-wrap break-words">${transcriptShort}</p>
+                                ${showTranscriptToggle ? `<div id="transcript-full-${file.id}" class="hidden">
+                                    <p class="text-sm text-gray-700 mt-2 leading-relaxed whitespace-pre-wrap break-words">${transcriptFull}</p>
+                                </div>` : ''}
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }).join('');
+    }
+
+    function formatSize(bytes) {
+        if (bytes < 1024) return bytes + ' 字节';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+        if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+        return (bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+    }
+
+    async function shareFile(assetId) {
+        try {
+            const response = await fetch(`/share/${assetId}`, { method: 'POST' });
+            const result = await response.json();
+            const url = window.location.origin + result.url;
+            navigator.clipboard.writeText(url);
+            showMessage('分享链接已复制到剪贴板！', 'success');
+        } catch (error) {
+            showMessage('分享失败', 'error');
+        }
+    }
+
+    async function runOCR(assetId, filename) {
+        // 显示进度条模态框
+        const progressModal = document.createElement('div');
+        progressModal.id = `ocr-progress-${assetId}`;
+        progressModal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center';
+        progressModal.innerHTML = `
+            <div class="bg-white rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+                <div class="text-center mb-6">
+                    <i class="fas fa-text-width text-5xl text-purple-500 mb-4"></i>
+                    <h3 class="text-2xl font-bold text-gray-800 mb-2">正在识别文字</h3>
+                    <p class="text-gray-600 text-sm">文件: ${filename}</p>
+                </div>
+                <div class="mb-6">
+                    <div class="bg-gray-200 rounded-full h-4 mb-3 overflow-hidden">
+                        <div id="ocr-progress-bar-${assetId}" class="bg-gradient-to-r from-purple-500 to-purple-600 h-4 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                    <div class="flex justify-between text-sm text-gray-600">
+                        <span id="ocr-progress-text-${assetId}">初始化中...</span>
+                        <span id="ocr-progress-percent-${assetId}">0%</span>
+                    </div>
+                </div>
+                <div class="text-center">
+                    <div class="inline-flex items-center text-purple-600">
+                        <i class="fas fa-spinner fa-spin mr-2"></i>
+                        <span>请稍候，正在处理中...</span>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(progressModal);
+
+        // 模拟进度更新
+        let progress = 0;
+        const progressInterval = setInterval(() => {
+            progress += Math.random() * 15;
+            if (progress > 90) progress = 90; // 最多到90%，等待实际结果
+            const progressBar = document.getElementById(`ocr-progress-bar-${assetId}`);
+            const progressText = document.getElementById(`ocr-progress-text-${assetId}`);
+            const progressPercent = document.getElementById(`ocr-progress-percent-${assetId}`);
+            
+            if (progressBar) {
+                progressBar.style.width = progress + '%';
+                progressPercent.textContent = Math.round(progress) + '%';
+                
+                if (progress < 30) {
+                    progressText.textContent = '正在读取图片...';
+                } else if (progress < 60) {
+                    progressText.textContent = '正在分析文字区域...';
+                } else if (progress < 90) {
+                    progressText.textContent = '正在识别文字内容...';
+                } else {
+                    progressText.textContent = '正在完成识别...';
+                }
+            }
+        }, 300);
+
+        try {
+            const response = await fetch(`/ocr/${assetId}`, { method: 'POST' });
+            if (!response.ok) {
+                throw new Error('识别失败');
+            }
+            const result = await response.json();
+            
+            // 完成进度
+            clearInterval(progressInterval);
+            const progressBar = document.getElementById(`ocr-progress-bar-${assetId}`);
+            const progressText = document.getElementById(`ocr-progress-text-${assetId}`);
+            const progressPercent = document.getElementById(`ocr-progress-percent-${assetId}`);
+            
+            if (progressBar) {
+                progressBar.style.width = '100%';
+                progressPercent.textContent = '100%';
+                progressText.textContent = '识别完成！';
+            }
+            
+            setTimeout(() => {
+                progressModal.remove();
+                showMessage('文字识别完成！', 'success');
+                loadFiles(); // 刷新列表
+            }, 1000);
+        } catch (error) {
+            clearInterval(progressInterval);
+            progressModal.remove();
+            showMessage('文字识别失败，请确保已安装OCR相关依赖', 'error');
+        }
+    }
+
+    // 切换OCR文本内容的显示/隐藏
+    function toggleOCRVisibility(fileId) {
+        try {
+            const contentDiv = document.getElementById(`ocr-content-${fileId}`);
+            const icon = document.getElementById(`ocr-visibility-icon-${fileId}`);
+            const text = document.getElementById(`ocr-visibility-text-${fileId}`);
+            
+            if (!contentDiv || !icon || !text) {
+                console.error('无法找到OCR可见性元素:', { fileId, contentDiv: !!contentDiv, icon: !!icon, text: !!text });
+                return;
+            }
+            
+            if (contentDiv.classList.contains('hidden')) {
+                // 显示内容
+                contentDiv.classList.remove('hidden');
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
+                text.textContent = '隐藏';
+            } else {
+                // 隐藏内容
+                contentDiv.classList.add('hidden');
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+                text.textContent = '显示';
+            }
+        } catch (error) {
+            console.error('切换OCR可见性失败:', error);
+        }
+    }
+
+    function toggleOCRText(fileId) {
+        try {
+            const shortText = document.getElementById(`ocr-text-${fileId}`);
+            const fullText = document.getElementById(`ocr-full-${fileId}`);
+            const toggle = document.getElementById(`ocr-toggle-${fileId}`);
+            
+            if (!shortText || !fullText || !toggle) {
+                console.error('无法找到OCR元素:', { fileId, shortText: !!shortText, fullText: !!fullText, toggle: !!toggle });
+                return;
+            }
+            
+            if (fullText.classList.contains('hidden')) {
+                shortText.classList.add('hidden');
+                fullText.classList.remove('hidden');
+                toggle.textContent = '收起';
+            } else {
+                shortText.classList.remove('hidden');
+                fullText.classList.add('hidden');
+                toggle.textContent = '展开';
+            }
+        } catch (error) {
+            console.error('切换OCR文本失败:', error);
+        }
+    }
+
+    // 切换语音转录内容的显示/隐藏
+    function toggleTranscriptVisibility(fileId) {
+        try {
+            const contentDiv = document.getElementById(`transcript-content-${fileId}`);
+            const icon = document.getElementById(`transcript-visibility-icon-${fileId}`);
+            const text = document.getElementById(`transcript-visibility-text-${fileId}`);
+            
+            if (!contentDiv || !icon || !text) {
+                console.error('无法找到转录可见性元素:', { fileId, contentDiv: !!contentDiv, icon: !!icon, text: !!text });
+                return;
+            }
+            
+            if (contentDiv.classList.contains('hidden')) {
+                // 显示内容（默认是隐藏的）
+                contentDiv.classList.remove('hidden');
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
+                text.textContent = '隐藏';
+            } else {
+                // 隐藏内容
+                contentDiv.classList.add('hidden');
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+                text.textContent = '显示';
+            }
+        } catch (error) {
+            console.error('切换转录可见性失败:', error);
+        }
+    }
+
+    function toggleTranscriptText(fileId) {
+        try {
+            const shortText = document.getElementById(`transcript-text-${fileId}`);
+            const fullText = document.getElementById(`transcript-full-${fileId}`);
+            const toggle = document.getElementById(`transcript-toggle-${fileId}`);
+            
+            if (!shortText || !fullText || !toggle) {
+                console.error('无法找到转录文本元素:', { fileId, shortText: !!shortText, fullText: !!fullText, toggle: !!toggle });
+                return;
+            }
+            
+            if (fullText.classList.contains('hidden')) {
+                shortText.classList.add('hidden');
+                fullText.classList.remove('hidden');
+                toggle.textContent = '收起';
+            } else {
+                shortText.classList.remove('hidden');
+                fullText.classList.add('hidden');
+                toggle.textContent = '展开';
+            }
+        } catch (error) {
+            console.error('切换转录文本失败:', error);
+        }
+    }
+
+    // 删除文件处理函数
+    function deleteFileHandler(buttonElement) {
+        const assetId = buttonElement.getAttribute('data-file-id');
+        const filename = buttonElement.getAttribute('data-file-name');
+        deleteFile(assetId, filename, buttonElement);
+    }
+
+    async function deleteFile(assetId, filename, buttonElement) {
+        if (!assetId) {
+            console.error('缺少文件ID');
+            showMessage('删除失败: 缺少文件ID', 'error');
+            return;
+        }
+        
+        if (!confirm(`确定要删除文件 "${filename || '未知文件'}" 吗？\n\n此操作不可恢复！`)) {
+            return;
+        }
+        
+        // 显示删除中状态
+        const deleteBtn = buttonElement;
+        if (!deleteBtn) {
+            console.error('无法找到删除按钮');
+            showMessage('删除失败: 无法找到删除按钮', 'error');
+            return;
+        }
+        
+        const originalText = deleteBtn.innerHTML;
+        deleteBtn.disabled = true;
+        deleteBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>删除中...';
+        deleteBtn.classList.add('opacity-75', 'cursor-not-allowed');
+        
+        try {
+            console.log('正在删除文件:', assetId);
+            const response = await fetch(`/api/files/${encodeURIComponent(assetId)}`, { 
+                method: 'DELETE',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
+            
+            console.log('删除响应状态:', response.status);
+            
+            if (!response.ok) {
+                let errorMessage = '删除失败';
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.detail || errorData.message || errorMessage;
+                } catch (e) {
+                    errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+                }
+                throw new Error(errorMessage);
+            }
+            
+            const result = await response.json();
+            console.log('删除成功:', result);
+            showMessage('文件删除成功！', 'success');
+            
+            // 立即刷新列表
+            setTimeout(() => {
+                loadFiles();
+            }, 300);
+        } catch (error) {
+            console.error('删除错误:', error);
+            showMessage(`文件删除失败: ${error.message}`, 'error');
+            
+            // 恢复按钮状态
+            deleteBtn.disabled = false;
+            deleteBtn.innerHTML = originalText;
+            deleteBtn.classList.remove('opacity-75', 'cursor-not-allowed');
+        }
+    }
+
+    async function runASR(assetId, filename) {
+        // 显示语言选择模态框
+        const langModal = document.createElement('div');
+        langModal.id = `asr-lang-modal-${assetId}`;
+        langModal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center';
+        langModal.innerHTML = `
+            <div class="bg-white rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+                <div class="text-center mb-6">
+                    <i class="fas fa-microphone text-5xl text-orange-500 mb-4"></i>
+                    <h3 class="text-2xl font-bold text-gray-800 mb-2">选择识别语言</h3>
+                    <p class="text-gray-600 text-sm">文件: ${filename}</p>
+                </div>
+                <div class="mb-6">
+                    <label class="block text-sm font-semibold text-gray-700 mb-3">选择语言:</label>
+                    <select id="asr-language-${assetId}" class="w-full px-4 py-3 border-2 border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="auto">自动检测</option>
+                        <option value="en">英文 (English)</option>
+                        <option value="zh">中文 (Chinese)</option>
+                    </select>
+                </div>
+                <div class="flex gap-3">
+                    <button id="asr-cancel-btn-${assetId}" 
+                            class="flex-1 px-4 py-3 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition font-medium">
+                        取消
+                    </button>
+                    <button id="asr-start-btn-${assetId}" 
+                            class="flex-1 px-4 py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-xl hover:from-orange-600 hover:to-orange-700 transition font-medium">
+                        <i class="fas fa-play mr-2"></i>开始识别
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(langModal);
+        
+        // 使用事件委托绑定按钮事件
+        setTimeout(() => {
+            const cancelBtn = document.getElementById(`asr-cancel-btn-${assetId}`);
+            const startBtn = document.getElementById(`asr-start-btn-${assetId}`);
+            
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', () => {
+                    langModal.remove();
+                });
+            }
+            
+            if (startBtn) {
+                startBtn.addEventListener('click', () => {
+                    // 在移除模态框之前先获取语言选择的值
+                    const languageSelect = document.getElementById(`asr-language-${assetId}`);
+                    if (languageSelect) {
+                        const language = languageSelect.value;
+                        startASR(assetId, filename, language);
+                    } else {
+                        showMessage('无法找到语言选择元素', 'error');
+                    }
+                });
+            }
+        }, 10);
+        
+        // 点击背景关闭
+        langModal.addEventListener('click', (e) => {
+            if (e.target === langModal) {
+                langModal.remove();
+            }
+        });
+    }
+
+    async function startASR(assetId, filename, language = null) {
+        // 关闭语言选择模态框
+        const langModal = document.getElementById(`asr-lang-modal-${assetId}`);
+        if (langModal) langModal.remove();
+        
+        // 如果没有传入language参数，尝试从DOM获取（向后兼容）
+        if (!language) {
+            const languageSelect = document.getElementById(`asr-language-${assetId}`);
+            if (languageSelect) {
+                language = languageSelect.value;
+            } else {
+                showMessage('无法找到语言选择元素', 'error');
+                return;
+            }
+        }
+        
+        // 显示进度条模态框
+        const progressModal = document.createElement('div');
+        progressModal.id = `asr-progress-${assetId}`;
+        progressModal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center';
+        progressModal.style.zIndex = '9999';
+        progressModal.innerHTML = `
+            <div class="bg-white rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+                <div class="text-center mb-6">
+                    <i class="fas fa-microphone text-5xl text-orange-500 mb-4"></i>
+                    <h3 class="text-2xl font-bold text-gray-800 mb-2">正在识别语音</h3>
+                    <p class="text-gray-600 text-sm">文件: ${filename}</p>
+                    <p class="text-gray-500 text-xs mt-1">语言: ${language === 'auto' ? '自动检测' : language === 'en' ? '英文' : '中文'}</p>
+                </div>
+                <div class="mb-6">
+                    <div class="bg-gray-200 rounded-full h-4 mb-3 overflow-hidden">
+                        <div id="asr-progress-bar-${assetId}" class="bg-gradient-to-r from-orange-500 to-orange-600 h-4 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                    <div class="flex justify-between text-sm text-gray-600">
+                        <span id="asr-progress-text-${assetId}">初始化中...</span>
+                        <span id="asr-progress-percent-${assetId}">0%</span>
+                    </div>
+                </div>
+                <div class="text-center">
+                    <div class="inline-flex items-center text-orange-600">
+                        <i class="fas fa-spinner fa-spin mr-2"></i>
+                        <span>请稍候，正在处理中...</span>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(progressModal);
+        
+        // 确保模态框显示
+        requestAnimationFrame(() => {
+            progressModal.style.display = 'flex';
+        });
+
+        // 模拟进度更新
+        let progress = 0;
+        const progressInterval = setInterval(() => {
+            progress += Math.random() * 12;
+            if (progress > 90) progress = 90; // 最多到90%，等待实际结果
+            const progressBar = document.getElementById(`asr-progress-bar-${assetId}`);
+            const progressText = document.getElementById(`asr-progress-text-${assetId}`);
+            const progressPercent = document.getElementById(`asr-progress-percent-${assetId}`);
+            
+            if (progressBar && progressText && progressPercent) {
+                progressBar.style.width = progress + '%';
+                progressPercent.textContent = Math.round(progress) + '%';
+                
+                if (progress < 20) {
+                    progressText.textContent = '正在提取音频...';
+                } else if (progress < 50) {
+                    progressText.textContent = '正在分析音频波形...';
+                } else if (progress < 80) {
+                    progressText.textContent = '正在识别语音内容...';
+                } else {
+                    progressText.textContent = '正在完成识别...';
+                }
+            }
+        }, 400);
+
+        try {
+            const url = `/asr/${assetId}${language !== 'auto' ? `?language=${language}` : ''}`;
+            const response = await fetch(url, { method: 'POST' });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ detail: '识别失败' }));
+                throw new Error(errorData.detail || '识别失败');
+            }
+            const result = await response.json();
+            
+            // 完成进度
+            clearInterval(progressInterval);
+            const progressBar = document.getElementById(`asr-progress-bar-${assetId}`);
+            const progressText = document.getElementById(`asr-progress-text-${assetId}`);
+            const progressPercent = document.getElementById(`asr-progress-percent-${assetId}`);
+            
+            if (progressBar) {
+                progressBar.style.width = '100%';
+                progressPercent.textContent = '100%';
+                progressText.textContent = '识别完成！';
+            }
+            
+            setTimeout(() => {
+                progressModal.remove();
+                showMessage('语音识别完成！', 'success');
+                setTimeout(() => loadFiles(), 500); // 刷新列表
+            }, 1000);
+        } catch (error) {
+            clearInterval(progressInterval);
+            progressModal.remove();
+            showMessage(`语音识别失败: ${error.message}`, 'error');
+        }
+    }
+
+    // 显示转码模态框
+    function showTranscodeModal(assetId, filename) {
+        const modal = document.createElement('div');
+        modal.id = `transcode-modal-${assetId}`;
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center';
+        modal.innerHTML = `
+            <div class="bg-white rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+                <div class="text-center mb-6">
+                    <i class="fas fa-cog text-5xl text-indigo-500 mb-4"></i>
+                    <h3 class="text-2xl font-bold text-gray-800 mb-2">视频转码</h3>
+                    <p class="text-gray-600 text-sm">文件: ${filename}</p>
+                </div>
+                <div class="mb-6 space-y-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">选择格式:</label>
+                        <select id="transcode-format-${assetId}" class="w-full px-4 py-3 border-2 border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="mp4">MP4 (推荐)</option>
+                            <option value="webm">WebM</option>
+                            <option value="avi">AVI</option>
+                            <option value="mov">MOV</option>
+                            <option value="mkv">MKV</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">选择分辨率:</label>
+                        <select id="transcode-resolution-${assetId}" class="w-full px-4 py-3 border-2 border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="720p">720p (推荐)</option>
+                            <option value="1080p">1080p (高清)</option>
+                            <option value="480p">480p (标清)</option>
+                            <option value="360p">360p (流畅)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="flex gap-3">
+                    <button id="transcode-cancel-btn-${assetId}" 
+                            class="flex-1 px-4 py-3 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition font-medium">
+                        取消
+                    </button>
+                    <button id="transcode-start-btn-${assetId}" 
+                            class="flex-1 px-4 py-3 bg-gradient-to-r from-indigo-500 to-indigo-600 text-white rounded-xl hover:from-indigo-600 hover:to-indigo-700 transition font-medium">
+                        <i class="fas fa-play mr-2"></i>开始转码
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        
+        // 使用事件委托绑定按钮事件
+        setTimeout(() => {
+            const cancelBtn = document.getElementById(`transcode-cancel-btn-${assetId}`);
+            const startBtn = document.getElementById(`transcode-start-btn-${assetId}`);
+            
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', () => {
+                    modal.remove();
+                });
+            }
+            
+            if (startBtn) {
+                startBtn.addEventListener('click', () => {
+                    // 在移除模态框之前先获取转码设置的值
+                    const formatSelect = document.getElementById(`transcode-format-${assetId}`);
+                    const resolutionSelect = document.getElementById(`transcode-resolution-${assetId}`);
+                    if (formatSelect && resolutionSelect) {
+                        const format = formatSelect.value;
+                        const resolution = resolutionSelect.value;
+                        startTranscode(assetId, filename, format, resolution);
+                    } else {
+                        showMessage('无法找到转码设置元素', 'error');
+                    }
+                });
+            }
+        }, 10);
+        
+        // 点击背景关闭
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        });
+    }
+
+    async function startTranscode(assetId, filename, format = null, resolution = null) {
+        // 关闭转码选择模态框
+        const modal = document.getElementById(`transcode-modal-${assetId}`);
+        if (modal) modal.remove();
+        
+        // 如果没有传入format和resolution参数，尝试从DOM获取（向后兼容）
+        if (!format || !resolution) {
+            const formatSelect = document.getElementById(`transcode-format-${assetId}`);
+            const resolutionSelect = document.getElementById(`transcode-resolution-${assetId}`);
+            
+            if (formatSelect && resolutionSelect) {
+                format = formatSelect.value;
+                resolution = resolutionSelect.value;
+            } else {
+                showMessage('无法找到转码设置元素', 'error');
+                return;
+            }
+        }
+        
+        // 显示转码进度
+        const progressModal = document.createElement('div');
+        progressModal.id = `transcode-progress-${assetId}`;
+        progressModal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center';
+        progressModal.style.zIndex = '9999';
+        progressModal.innerHTML = `
+            <div class="bg-white rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+                <div class="text-center mb-6">
+                    <i class="fas fa-cog text-5xl text-indigo-500 mb-4"></i>
+                    <h3 class="text-2xl font-bold text-gray-800 mb-2">正在转码</h3>
+                    <p class="text-gray-600 text-sm">文件: ${filename}</p>
+                    <p class="text-gray-500 text-xs mt-1">格式: ${format.toUpperCase()} | 分辨率: ${resolution}</p>
+                </div>
+                <div class="mb-6">
+                    <div class="bg-gray-200 rounded-full h-4 mb-3 overflow-hidden">
+                        <div id="transcode-progress-bar-${assetId}" class="bg-gradient-to-r from-indigo-500 to-indigo-600 h-4 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                    <div class="flex justify-between text-sm text-gray-600">
+                        <span id="transcode-progress-text-${assetId}">准备中...</span>
+                        <span id="transcode-progress-percent-${assetId}">0%</span>
+                    </div>
+                </div>
+                <div class="text-center">
+                    <div class="inline-flex items-center text-indigo-600">
+                        <i class="fas fa-spinner fa-spin mr-2"></i>
+                        <span>请稍候，转码可能需要较长时间...</span>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(progressModal);
+        
+        // 确保模态框显示
+        requestAnimationFrame(() => {
+            progressModal.style.display = 'flex';
+        });
+
+        // 模拟进度更新
+        let progress = 0;
+        const progressInterval = setInterval(() => {
+            progress += Math.random() * 8;
+            if (progress > 95) progress = 95;
+            const progressBar = document.getElementById(`transcode-progress-bar-${assetId}`);
+            const progressText = document.getElementById(`transcode-progress-text-${assetId}`);
+            const progressPercent = document.getElementById(`transcode-progress-percent-${assetId}`);
+            
+            if (progressBar && progressText && progressPercent) {
+                progressBar.style.width = progress + '%';
+                progressPercent.textContent = Math.round(progress) + '%';
+                
+                if (progress < 30) {
+                    progressText.textContent = '正在分析视频...';
+                } else if (progress < 60) {
+                    progressText.textContent = '正在转码视频...';
+                } else if (progress < 90) {
+                    progressText.textContent = '正在处理音频...';
+                } else {
+                    progressText.textContent = '正在完成转码...';
+                }
+            }
+        }, 500);
+
+        try {
+            const response = await fetch(`/transcode/${assetId}?format=${format}&resolution=${resolution}`, { 
+                method: 'POST' 
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ detail: '转码失败' }));
+                throw new Error(errorData.detail || '转码失败');
+            }
+            
+            const result = await response.json();
+            
+            // 完成进度
+            clearInterval(progressInterval);
+            const progressBar = document.getElementById(`transcode-progress-bar-${assetId}`);
+            const progressText = document.getElementById(`transcode-progress-text-${assetId}`);
+            const progressPercent = document.getElementById(`transcode-progress-percent-${assetId}`);
+            
+            if (progressBar) {
+                progressBar.style.width = '100%';
+                progressPercent.textContent = '100%';
+                progressText.textContent = '转码完成！';
+            }
+            
+            setTimeout(() => {
+                progressModal.remove();
+                showMessage('转码完成！', 'success');
+                // 显示下载链接
+                if (result.download_url) {
+                    const shouldDownload = confirm('转码完成！是否立即下载？');
+                    if (shouldDownload) {
+                        // 创建隐藏的下载链接并触发点击
+                        const link = document.createElement('a');
+                        link.href = result.download_url;
+                        link.download = `${filename.split('.')[0]}_${format}_${resolution}.${format}`;
+                        link.style.display = 'none';
+                        document.body.appendChild(link);
+                        link.click();
+                        // 延迟删除，确保下载开始
+                        setTimeout(() => {
+                            document.body.removeChild(link);
+                        }, 100);
+                    }
+                }
+            }, 1000);
+        } catch (error) {
+            clearInterval(progressInterval);
+            progressModal.remove();
+            showMessage(`转码失败: ${error.message}`, 'error');
+        }
+    }
+
+    // 查看图片
+    function viewImage(assetId, filename) {
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4';
+        modal.innerHTML = `
+            <div class="relative max-w-7xl max-h-full w-full h-full flex items-center justify-center">
+                <button onclick="this.closest('.fixed').remove()" 
+                        class="absolute top-4 right-4 z-10 text-white bg-black bg-opacity-50 hover:bg-opacity-70 rounded-full p-3 transition">
+                    <i class="fas fa-times text-2xl"></i>
+                </button>
+                <img src="/download/${assetId}" 
+                     alt="${filename}" 
+                     class="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                     onclick="this.closest('.fixed').remove()">
+                <div class="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-50 text-white px-4 py-2 rounded-lg">
+                    <p class="text-sm">${filename}</p>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        
+        // 点击背景关闭
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        });
+        
+        // ESC键关闭
+        const handleEsc = (e) => {
+            if (e.key === 'Escape') {
+                modal.remove();
+                document.removeEventListener('keydown', handleEsc);
+            }
+        };
+        document.addEventListener('keydown', handleEsc);
+    }
+
+    // 播放视频
+    function playVideo(assetId, filename) {
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4';
+        modal.innerHTML = `
+            <div class="relative max-w-7xl w-full">
+                <button onclick="this.closest('.fixed').remove()" 
+                        class="absolute top-4 right-4 z-10 text-white bg-black bg-opacity-50 hover:bg-opacity-70 rounded-full p-3 transition">
+                    <i class="fas fa-times text-2xl"></i>
+                </button>
+                <div class="bg-black rounded-lg overflow-hidden shadow-2xl">
+                    <video controls autoplay class="w-full max-h-[85vh]" src="/download/${assetId}">
+                        您的浏览器不支持视频播放。
+                    </video>
+                    <div class="bg-black bg-opacity-50 text-white px-4 py-2">
+                        <p class="text-sm">${filename}</p>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        
+        // 点击背景关闭
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        });
+        
+        // ESC键关闭
+        const handleEsc = (e) => {
+            if (e.key === 'Escape') {
+                modal.remove();
+                document.removeEventListener('keydown', handleEsc);
+            }
+        };
+        document.addEventListener('keydown', handleEsc);
+    }
+
+    // 筛选功能
+    document.getElementById('filterInput').addEventListener('input', loadFiles);
+    document.getElementById('kindFilter').addEventListener('change', loadFiles);
+    document.getElementById('categoryFilter').addEventListener('change', loadFiles);
+
+    // 加载文件列表
+    loadFiles();
+</script>
+{% endblock %}
+
